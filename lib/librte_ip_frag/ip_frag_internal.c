@@ -43,23 +43,7 @@
 #define	IP_FRAG_TBL_POS(tbl, sig)	\
 	((tbl)->pkt + ((sig) & (tbl)->entry_mask))
 
-#ifdef RTE_LIBRTE_IP_FRAG_TBL_STAT
-#define	IP_FRAG_TBL_STAT_UPDATE(s, f, v)	((s)->f += (v))
-#else
-#define	IP_FRAG_TBL_STAT_UPDATE(s, f, v)	do {} while (0)
-#endif /* IP_FRAG_TBL_STAT */
-
 /* local frag table helper functions */
-static inline void
-ip_frag_tbl_del(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
-	struct ip_frag_pkt *fp)
-{
-	ip_frag_free(fp, dr);
-	ip_frag_key_invalidate(&fp->key);
-	TAILQ_REMOVE(&tbl->lru, fp, lru);
-	tbl->use_entries--;
-	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, del_num, 1);
-}
 
 static inline void
 ip_frag_tbl_add(struct rte_ip_frag_tbl *tbl,  struct ip_frag_pkt *fp,
@@ -76,7 +60,7 @@ static inline void
 ip_frag_tbl_reuse(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
 	struct ip_frag_pkt *fp, uint64_t tms)
 {
-	ip_frag_free(fp, dr);
+	ip_frag_free(tbl, fp, dr);
 	ip_frag_reset(fp, tms);
 	TAILQ_REMOVE(&tbl->lru, fp, lru);
 	TAILQ_INSERT_TAIL(&tbl->lru, fp, lru);
@@ -135,8 +119,9 @@ ipv6_frag_hash(const struct ip_frag_key *key, uint32_t *v1, uint32_t *v2)
 }
 
 struct rte_mbuf *
-ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
-	struct rte_mbuf *mb, uint16_t ofs, uint16_t len, uint16_t more_frags)
+ip_frag_process(struct rte_ip_frag_tbl *tbl, struct ip_frag_pkt *fp,
+	struct rte_ip_frag_death_row *dr, struct rte_mbuf *mb, uint16_t ofs,
+	uint16_t len, uint16_t more_frags)
 {
 	uint32_t idx;
 
@@ -194,7 +179,7 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 				fp->frags[IP_LAST_FRAG_IDX].len);
 
 		/* free all fragments, invalidate the entry. */
-		ip_frag_free(fp, dr);
+		ip_frag_free(tbl, fp, dr);
 		ip_frag_key_invalidate(&fp->key);
 		IP_FRAG_MBUF2DR(dr, mb);
 
@@ -204,6 +189,7 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 	fp->frags[idx].ofs = ofs;
 	fp->frags[idx].len = len;
 	fp->frags[idx].mb = mb;
+	tbl->nb_mbufs++;
 
 	mb = NULL;
 
@@ -252,7 +238,10 @@ ip_frag_process(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr,
 				fp->frags[IP_LAST_FRAG_IDX].len);
 
 		/* free associated resources. */
-		ip_frag_free(fp, dr);
+		ip_frag_free(tbl, fp, dr);
+	}
+	else {
+		tbl->nb_mbufs -= fp->last_idx;
 	}
 
 	/* we are done with that entry, invalidate it. */

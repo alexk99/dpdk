@@ -94,10 +94,12 @@ struct ip_frag_pkt {
 
 #define IP_FRAG_DEATH_ROW_LEN 32 /**< death row size (in packets) */
 
+#define IP_FRAG_DEATH_ROW_MBUF_LEN (IP_FRAG_DEATH_ROW_LEN * (IP_MAX_FRAG_NUM + 1))
+
 /** mbuf death row (packets to be freed) */
 struct rte_ip_frag_death_row {
 	uint32_t cnt;          /**< number of mbufs currently on death row */
-	struct rte_mbuf *row[IP_FRAG_DEATH_ROW_LEN * (IP_MAX_FRAG_NUM + 1)];
+	struct rte_mbuf *row[IP_FRAG_DEATH_ROW_MBUF_LEN];
 	/**< mbufs to be freed */
 };
 
@@ -122,6 +124,7 @@ struct rte_ip_frag_tbl {
 	uint32_t             bucket_entries;  /**< hash associativity. */
 	uint32_t             nb_entries;      /**< total size of the table. */
 	uint32_t             nb_buckets;      /**< num of associativity lines. */
+	uint32_t             nb_mbufs;        /**< num of mbufs holded in the tbl. */
 	struct ip_frag_pkt *last;         /**< last used entry. */
 	struct ip_pkt_list lru;           /**< LRU list for table entries. */
 	struct ip_frag_tbl_stat stat;     /**< statistics counters. */
@@ -353,6 +356,32 @@ void rte_ip_frag_free_death_row(struct rte_ip_frag_death_row *dr,
  */
 void
 rte_ip_frag_table_statistics_dump(FILE * f, const struct rte_ip_frag_tbl *tbl);
+
+/**
+ * Number of mbufs holded in the fragmentation table.
+ *
+ * @param tbl
+ *   Fragmentation table
+ * 
+ * @return
+ *   Number of mbufs holded in the fragmentation table.
+ */
+static inline uint32_t
+rte_frag_table_mbuf_count(const struct rte_ip_frag_tbl *tbl)
+{
+	return tbl->nb_mbufs;
+}
+
+/*
+ */
+void
+rte_frag_table_del_expired_entries(struct rte_ip_frag_tbl *tbl,
+	struct rte_ip_frag_death_row *dr, uint64_t tms);
+
+#ifdef RTE_IP_FRAG_DEBUG
+void
+rte_frag_table_print(struct rte_ip_frag_tbl *tbl);
+#endif /* RTE_IP_FRAG_DEBUG */
 
 #ifdef __cplusplus
 }

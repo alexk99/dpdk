@@ -213,7 +213,7 @@ rte_ipv6_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 
 
 	/* process the fragmented packet. */
-	mb = ip_frag_process(fp, dr, mb, ip_ofs, ip_len,
+	mb = ip_frag_process(tbl, fp, dr, mb, ip_ofs, ip_len,
 			MORE_FRAGS(frag_hdr->frag_data));
 	ip_frag_inuse(tbl, fp);
 

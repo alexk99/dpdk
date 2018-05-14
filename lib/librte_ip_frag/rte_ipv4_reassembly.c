@@ -173,7 +173,7 @@ rte_ipv4_frag_reassemble_packet(struct rte_ip_frag_tbl *tbl,
 
 
 	/* process the fragmented packet. */
-	mb = ip_frag_process(fp, dr, mb, ip_ofs, ip_len, ip_flag);
+	mb = ip_frag_process(tbl, fp, dr, mb, ip_ofs, ip_len, ip_flag);
 	ip_frag_inuse(tbl, fp);
 
 	IP_FRAG_LOG(DEBUG, "%s:%d:\n"

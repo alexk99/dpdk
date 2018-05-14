@@ -43,6 +43,12 @@
 #define	IP_FRAG_LOG(lvl, fmt, args...)	do {} while(0)
 #endif /* IP_FRAG_DEBUG */
 
+#ifdef RTE_LIBRTE_IP_FRAG_TBL_STAT
+#define	IP_FRAG_TBL_STAT_UPDATE(s, f, v)	((s)->f += (v))
+#else
+#define	IP_FRAG_TBL_STAT_UPDATE(s, f, v)	do {} while (0)
+#endif /* IP_FRAG_TBL_STAT */
+
 #define IPV4_KEYLEN 1
 #define IPV6_KEYLEN 4
 
@@ -55,9 +61,9 @@
 	"%08" PRIx64 "%08" PRIx64 "%08" PRIx64 "%08" PRIx64
 
 /* internal functions declarations */
-struct rte_mbuf * ip_frag_process(struct ip_frag_pkt *fp,
-		struct rte_ip_frag_death_row *dr, struct rte_mbuf *mb,
-		uint16_t ofs, uint16_t len, uint16_t more_frags);
+struct rte_mbuf * ip_frag_process(struct rte_ip_frag_tbl *tbl, 
+	struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr, 
+	struct rte_mbuf *mb, uint16_t ofs, uint16_t len, uint16_t more_frags);
 
 struct ip_frag_pkt * ip_frag_find(struct rte_ip_frag_tbl *tbl,
 		struct rte_ip_frag_death_row *dr,
@@ -70,8 +76,6 @@ struct ip_frag_pkt * ip_frag_lookup(struct rte_ip_frag_tbl *tbl,
 /* these functions need to be declared here as ip_frag_process relies on them */
 struct rte_mbuf *ipv4_frag_reassemble(struct ip_frag_pkt *fp);
 struct rte_mbuf *ipv6_frag_reassemble(struct ip_frag_pkt *fp);
-
-
 
 /*
  * misc frag key functions
@@ -114,7 +118,8 @@ ip_frag_key_cmp(const struct ip_frag_key * k1, const struct ip_frag_key * k2)
 
 /* put fragment on death row */
 static inline void
-ip_frag_free(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr)
+ip_frag_free(struct rte_ip_frag_tbl *tbl, struct ip_frag_pkt *fp, 
+	struct rte_ip_frag_death_row *dr)
 {
 	uint32_t i, k;
 
@@ -123,6 +128,7 @@ ip_frag_free(struct ip_frag_pkt *fp, struct rte_ip_frag_death_row *dr)
 		if (fp->frags[i].mb != NULL) {
 			dr->row[k++] = fp->frags[i].mb;
 			fp->frags[i].mb = NULL;
+			tbl->nb_mbufs --;
 		}
 	}
 
@@ -176,6 +182,18 @@ ip_frag_reset(struct ip_frag_pkt *fp, uint64_t tms)
 	fp->last_idx = IP_MIN_FRAG_NUM;
 	fp->frags[IP_LAST_FRAG_IDX] = zero_frag;
 	fp->frags[IP_FIRST_FRAG_IDX] = zero_frag;
+}
+
+/* frag table helper functions */
+static inline void
+ip_frag_tbl_del(struct rte_ip_frag_tbl *tbl, struct rte_ip_frag_death_row *dr,
+	struct ip_frag_pkt *fp)
+{
+	ip_frag_free(tbl, fp, dr);
+	ip_frag_key_invalidate(&fp->key);
+	TAILQ_REMOVE(&tbl->lru, fp, lru);
+	tbl->use_entries--;
+	IP_FRAG_TBL_STAT_UPDATE(&tbl->stat, del_num, 1);
 }
 
 #endif /* _IP_FRAG_COMMON_H_ */

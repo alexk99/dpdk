@@ -104,6 +104,7 @@ rte_ip_frag_table_create(uint32_t bucket_num, uint32_t bucket_entries,
 	tbl->nb_buckets = bucket_num;
 	tbl->bucket_entries = bucket_entries;
 	tbl->entry_mask = (tbl->nb_entries - 1) & ~(tbl->bucket_entries  - 1);
+	tbl->nb_mbufs = 0;
 
 	TAILQ_INIT(&(tbl->lru));
 	return tbl;
@@ -150,3 +151,52 @@ rte_ip_frag_table_statistics_dump(FILE *f, const struct rte_ip_frag_tbl *tbl)
 		fail_nospace,
 		fail_total - fail_nospace);
 }
+
+/*
+ *
+ */
+void
+rte_frag_table_del_expired_entries(struct rte_ip_frag_tbl *tbl,
+	struct rte_ip_frag_death_row *dr, uint64_t tms)
+{
+	uint64_t max_cycles;
+	struct ip_frag_pkt *fp;
+
+	max_cycles = tbl->max_cycles;
+
+	TAILQ_FOREACH(fp, &tbl->lru, lru)
+		if (max_cycles + fp->start < tms) {
+			/* check that death row has enough space */
+			if (IP_FRAG_DEATH_ROW_MBUF_LEN - dr->cnt >= fp->last_idx)
+				ip_frag_tbl_del(tbl, dr, fp);
+			else
+				return;
+		}
+		else {
+			return;
+		}
+}
+
+#ifdef RTE_IP_FRAG_DEBUG
+
+void
+rte_frag_table_print(struct rte_ip_frag_tbl *tbl)
+{
+	uint32_t i, cnt;
+	printf("entries in use: %u, mbuf holded %u\n", tbl->use_entries,
+			  tbl->nb_mbufs);
+	struct ip_frag_pkt *fp;
+	TAILQ_FOREACH(fp, &tbl->lru, lru)
+		if (!ip_frag_key_is_empty(&fp->key)) {
+
+			/* cnt mbufs in the packet */
+			cnt = 0;
+			for (i=0; i!=fp->last_idx; i++)
+				if (fp->frags[i].mb != NULL)
+					cnt++;
+
+			printf("start %"PRIu64", mbuf cnt %u\n", fp->start, cnt);
+		}
+}
+
+#endif /* RTE_IP_FRAG_DEBUG */
